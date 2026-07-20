@@ -57,6 +57,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: reservation.reason }, { status: 402 });
   }
 
+  let refundableReservation = count;
+
   try {
     const provider = aiProvider();
     const { data: directions, usage: directionUsage } = await provider.generateImageDirections({
@@ -71,9 +73,10 @@ export async function POST(req: Request) {
 
     const successfulImages = images.filter((image) => image.base64 || image.url);
     const successfulCount = successfulImages.length;
-    const refundCount = Math.max(0, count - successfulCount);
-    if (refundCount > 0) {
-      await refundOnFailure(user.id, "image", refundCount);
+    const partialRefund = Math.max(0, count - successfulCount);
+    if (partialRefund > 0) {
+      await refundOnFailure(user.id, "image", partialRefund);
+      refundableReservation -= partialRefund;
     }
     if (successfulCount === 0) {
       throw new Error("Image generation returned no usable images");
@@ -117,17 +120,22 @@ export async function POST(req: Request) {
       eventType: "generate_image",
       status: "success",
       usage: { ...imageUsage, image_count: successfulCount },
-      metadata: { requested_count: count, successful_count: successfulCount, refunded_count: refundCount, aspect },
+      metadata: {
+        requested_count: count,
+        successful_count: successfulCount,
+        refunded_count: partialRefund,
+        aspect,
+      },
     });
 
+    refundableReservation = 0;
     return NextResponse.json({ images: successfulImages, directions });
   } catch (err) {
-    // At this point partial-output refunds may already have happened. A full
-    // provider failure reaches here before that point and needs the full refund.
-    const message = err instanceof Error ? err.message : String(err);
-    if (message !== "Image generation returned no usable images") {
-      await refundOnFailure(user.id, "image", count);
+    if (refundableReservation > 0) {
+      await refundOnFailure(user.id, "image", refundableReservation);
+      refundableReservation = 0;
     }
+    const message = err instanceof Error ? err.message : String(err);
     await recordUsageEvent({
       userId: user.id,
       projectId,
