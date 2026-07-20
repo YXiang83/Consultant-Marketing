@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: reservation.reason }, { status: 402 });
   }
 
-  let refundableReservation = count;
+  let refundableReservation: number = count;
 
   try {
     const provider = aiProvider();
