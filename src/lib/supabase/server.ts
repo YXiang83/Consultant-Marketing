@@ -3,10 +3,13 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { publicEnv, serverEnv } from "@/lib/env";
 
+export const APP_DB_SCHEMA = "consultant_marketing";
+
 export async function supabaseServer() {
   const env = publicEnv();
   const cookieStore = await cookies();
   return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    db: { schema: APP_DB_SCHEMA },
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -31,6 +34,7 @@ export function supabaseAdmin() {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for server-only admin client");
   }
   return createClient(pub.NEXT_PUBLIC_SUPABASE_URL, srv.SUPABASE_SERVICE_ROLE_KEY, {
+    db: { schema: APP_DB_SCHEMA },
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
