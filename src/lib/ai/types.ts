@@ -11,8 +11,13 @@ export const contentTypeSchema = z.enum([
 ]);
 export type ContentType = z.infer<typeof contentTypeSchema>;
 
+export const copyModeSchema = z.enum(["content", "sales"]);
+export type CopyMode = z.infer<typeof copyModeSchema>;
+
 export const marketingBriefSchema = z.object({
   content_type: contentTypeSchema,
+  copy_mode: copyModeSchema.default("sales"),
+  marketing_angle: z.string().default(""),
   product_or_service: z.string().min(1),
   short_description: z.string().default(""),
   key_benefits: z.array(z.string()).default([]),
@@ -37,6 +42,8 @@ export type MarketingBrief = z.infer<typeof marketingBriefSchema>;
 
 export const partialBriefSchema = z.object({
   content_type: contentTypeSchema.optional(),
+  copy_mode: copyModeSchema.optional(),
+  marketing_angle: z.string().optional(),
   product_or_service: z.string().optional(),
   short_description: z.string().optional(),
   key_benefits: z.array(z.string()).optional(),
@@ -71,6 +78,8 @@ export const nextQuestionSchema = z.object({
   step: z.string(),
   question: z.string(),
   helper: z.string().default(""),
+  recommendation: z.string().default(""),
+  reason: z.string().default(""),
   input_type: z.enum(["text", "long_text", "single_choice", "multi_choice"]),
   options: z.array(z.string()).default([]),
   is_complete: z.boolean().default(false),
