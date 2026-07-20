@@ -2,14 +2,15 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import { isConfiguredAdmin, type MemberStatus, type MembershipAccess, type MembershipPlan } from "@/lib/membership";
-import { APP_DB_SCHEMA, supabaseAdmin } from "@/lib/supabase/server";
+import { APP_DB_SCHEMA, supabaseServer } from "@/lib/supabase/server";
 
 export async function getStrictMembershipAccess(user: User): Promise<MembershipAccess> {
   if (isConfiguredAdmin(user)) {
     return { configured: true, allowed: true, status: "active", isAdmin: true };
   }
 
-  const db = supabaseAdmin().schema(APP_DB_SCHEMA);
+  const supabase = await supabaseServer();
+  const db = supabase.schema(APP_DB_SCHEMA);
   const [{ data: member, error: memberError }, { data: subscription, error: subscriptionError }] =
     await Promise.all([
       db.from("members").select("role, status").eq("id", user.id).maybeSingle(),
