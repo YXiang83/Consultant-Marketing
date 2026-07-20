@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { supabaseServer } from "@/lib/supabase/server";
 import { aiProvider } from "@/lib/ai";
 import { marketingBriefSchema, type GeneratedCopy } from "@/lib/ai/types";
+import { supabaseServer } from "@/lib/supabase/server";
 import { checkAndReserve, recordUsageEvent, refundOnFailure } from "@/lib/usage";
 
-const bodySchema = z.object({ projectId: z.string().uuid() });
+const bodySchema = z.object({
+  projectId: z.string().uuid(),
+  count: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(4),
+  aspect: z.enum(["1:1", "4:5", "16:9", "9:16"]).default("4:5"),
+});
 
 export async function POST(req: Request) {
   const supabase = await supabaseServer();
@@ -17,7 +21,7 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(raw);
   if (!parsed.success) return new NextResponse("Invalid body", { status: 400 });
 
-  const { projectId } = parsed.data;
+  const { projectId, count, aspect } = parsed.data;
 
   const { data: project } = await supabase
     .from("projects")
@@ -48,57 +52,75 @@ export async function POST(req: Request) {
   const copy = copyAsset?.content as GeneratedCopy | undefined;
   if (!copy) return new NextResponse("Copy required before image", { status: 400 });
 
-  const reservation = await checkAndReserve(user.id, "image", 1);
+  const reservation = await checkAndReserve(user.id, "image", count);
   if (!reservation.ok) {
     return NextResponse.json({ error: reservation.reason }, { status: 402 });
   }
 
   try {
     const provider = aiProvider();
-    const { data: concept, usage: conceptUsage } = await provider.generateImageConcept({ brief, copy });
-    const { data: image, usage: imageUsage } = await provider.generateMarketingImage({
-      prompt: concept.image_prompt,
-      aspect: "1:1",
+    const { data: directions, usage: directionUsage } = await provider.generateImageDirections({
+      brief,
+      copy,
+      count,
+    });
+    const { data: images, usage: imageUsage } = await provider.generateMarketingImages({
+      directions,
+      aspect,
     });
 
     await supabase.from("generated_assets").insert({
       project_id: projectId,
       user_id: user.id,
       asset_type: "concept",
-      content: concept,
-      model: conceptUsage.model,
+      content: { directions, aspect },
+      model: directionUsage.model,
       generation_status: "ready",
+      metadata: { count },
     });
 
-    await supabase.from("generated_assets").insert({
-      project_id: projectId,
-      user_id: user.id,
-      asset_type: "image",
-      content: image,
-      prompt_snapshot: concept.image_prompt,
-      model: imageUsage.model,
-      generation_status: image.base64 || image.url ? "ready" : "failed",
-    });
+    await supabase.from("generated_assets").insert(
+      images.map((image, index) => ({
+        project_id: projectId,
+        user_id: user.id,
+        asset_type: "image",
+        version: index + 1,
+        content: image,
+        prompt_snapshot: image.prompt,
+        model: image.model,
+        generation_status: image.base64 || image.url ? "ready" : "failed",
+        metadata: {
+          direction_id: image.direction_id,
+          direction_title: image.direction_title,
+          aspect,
+          batch_size: count,
+        },
+      })),
+    );
 
     await recordUsageEvent({
       userId: user.id,
       projectId,
       eventType: "generate_image",
-      status: image.base64 || image.url ? "success" : "error",
+      status: images.some((image) => image.base64 || image.url) ? "success" : "error",
       usage: imageUsage,
+      metadata: { count, aspect },
     });
 
-    return NextResponse.json({ image, concept });
+    return NextResponse.json({ images, directions });
   } catch (err) {
-    await refundOnFailure(user.id, "image", 1);
+    await refundOnFailure(user.id, "image", count);
     await recordUsageEvent({
       userId: user.id,
       projectId,
       eventType: "generate_image",
       status: "error",
-      usage: { provider: aiProvider().name, model: "unknown" },
-      metadata: { message: err instanceof Error ? err.message : String(err) },
+      usage: { provider: aiProvider().name, model: "unknown", image_count: count },
+      metadata: { message: err instanceof Error ? err.message : String(err), count, aspect },
     });
-    return new NextResponse("Image generation failed", { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Image generation failed" },
+      { status: 500 },
+    );
   }
 }
