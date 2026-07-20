@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { updateMemberProfile } from "@/lib/member-profile-admin";
 import {
   activateMembership,
   adjustQuota,
@@ -18,6 +19,12 @@ const reasonSchema = z.string().trim().min(3).max(500);
 function text(formData: FormData, name: string) {
   const value = formData.get(name);
   return typeof value === "string" ? value : "";
+}
+
+function nullableText(formData: FormData, name: string, max: number) {
+  const value = text(formData, name).trim();
+  if (!value) return null;
+  return z.string().max(max).parse(value);
 }
 
 function integer(formData: FormData, name: string) {
@@ -76,6 +83,26 @@ export async function adjustQuotaAction(formData: FormData) {
   const reason = reasonSchema.parse(text(formData, "reason"));
 
   await adjustQuota({ userId, actorUserId: admin.id, kind, delta, reason });
+  revalidatePath("/admin/members");
+  revalidatePath("/account");
+}
+
+export async function updateMemberProfileAction(formData: FormData) {
+  const admin = await requireAdminUser();
+  const userId = uuidSchema.parse(text(formData, "userId"));
+  const displayName = nullableText(formData, "displayName", 120);
+  const phone = nullableText(formData, "phone", 60);
+  const internalNotes = nullableText(formData, "internalNotes", 2000);
+  const reason = reasonSchema.parse(text(formData, "reason"));
+
+  await updateMemberProfile({
+    userId,
+    actorUserId: admin.id,
+    displayName,
+    phone,
+    internalNotes,
+    reason,
+  });
   revalidatePath("/admin/members");
   revalidatePath("/account");
 }
