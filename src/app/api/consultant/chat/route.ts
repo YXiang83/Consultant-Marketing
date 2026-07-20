@@ -99,8 +99,8 @@ export async function POST(req: Request) {
   });
 
   try {
-    const currentBrief =
-      partialBriefSchema.safeParse(session.structured_brief).data ?? ({} as PartialBrief);
+    const briefResult = partialBriefSchema.safeParse(session.structured_brief);
+    const currentBrief: PartialBrief = briefResult.success ? briefResult.data : {};
     const { data: turn, usage } = await aiProvider().continueConsultation({
       knownBrief: currentBrief,
       history,
