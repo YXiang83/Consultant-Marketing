@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { getMemberAccount, getMembershipAccess } from "@/lib/membership";
+import { getStrictMembershipAccess } from "@/lib/membership-access";
+import { getMemberAccount } from "@/lib/membership";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ export default async function MembershipStatusPage() {
   const user = data.user;
   if (!user) redirect("/login");
 
-  const access = await getMembershipAccess(user);
+  const access = await getStrictMembershipAccess(user);
   if (access.allowed) redirect("/home");
 
   const account = await getMemberAccount(user.id);
@@ -70,7 +71,7 @@ export default async function MembershipStatusPage() {
 
         {!access.configured && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-            Membership setup is not yet available in this environment. The reviewed database migration still needs approval.
+            Membership setup is unavailable or could not be verified. Access remains blocked until the database configuration is healthy.
           </div>
         )}
 
