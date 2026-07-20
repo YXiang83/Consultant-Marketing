@@ -9,9 +9,9 @@ const publicSchema = z.object({
 const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
   OPENAI_API_KEY: z.string().min(20).optional(),
-  OPENAI_TEXT_MODEL: z.string().default("gpt-4o-mini"),
+  OPENAI_TEXT_MODEL: z.string().default("gpt-5"),
   OPENAI_IMAGE_MODEL: z.string().default("gpt-image-1"),
-  AI_PROVIDER: z.enum(["openai", "mock"]).default("mock"),
+  AI_PROVIDER: z.enum(["openai", "mock"]).default("openai"),
 });
 
 function readPublic() {
