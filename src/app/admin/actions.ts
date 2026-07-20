@@ -26,7 +26,9 @@ function integer(formData: FormData, name: string) {
   return parsed;
 }
 
-function moneyToSen(formData: FormData, name: string, nullable = false) {
+function moneyToSen(formData: FormData, name: string): number;
+function moneyToSen(formData: FormData, name: string, nullable: true): number | null;
+function moneyToSen(formData: FormData, name: string, nullable = false): number | null {
   const raw = text(formData, name).trim();
   if (nullable && raw === "") return null;
   const value = Number(raw);
