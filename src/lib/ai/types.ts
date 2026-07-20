@@ -11,8 +11,14 @@ export const contentTypeSchema = z.enum([
 ]);
 export type ContentType = z.infer<typeof contentTypeSchema>;
 
+export const copyModeSchema = z.enum(["content", "sales"]);
+export type CopyMode = z.infer<typeof copyModeSchema>;
+
 export const marketingBriefSchema = z.object({
   content_type: contentTypeSchema,
+  copy_mode: copyModeSchema.default("sales"),
+  selected_angle: z.string().default(""),
+  consultant_summary: z.string().default(""),
   product_or_service: z.string().min(1),
   short_description: z.string().default(""),
   key_benefits: z.array(z.string()).default([]),
@@ -37,6 +43,9 @@ export type MarketingBrief = z.infer<typeof marketingBriefSchema>;
 
 export const partialBriefSchema = z.object({
   content_type: contentTypeSchema.optional(),
+  copy_mode: copyModeSchema.optional(),
+  selected_angle: z.string().optional(),
+  consultant_summary: z.string().optional(),
   product_or_service: z.string().optional(),
   short_description: z.string().optional(),
   key_benefits: z.array(z.string()).optional(),
@@ -77,21 +86,56 @@ export const nextQuestionSchema = z.object({
 });
 export type NextQuestion = z.infer<typeof nextQuestionSchema>;
 
-export const generatedCopySchema = z.object({
+export const consultantChoiceSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string().default(""),
+  recommended: z.boolean().default(false),
+});
+export type ConsultantChoice = z.infer<typeof consultantChoiceSchema>;
+
+export const consultantTurnSchema = z.object({
+  message: z.string(),
+  recommendation: z.string().default(""),
+  choices: z.array(consultantChoiceSchema).max(3).default([]),
+  brief_patch: partialBriefSchema.default({}),
+  ready_to_generate: z.boolean().default(false),
+});
+export type ConsultantTurn = z.infer<typeof consultantTurnSchema>;
+
+export const platformVariantSchema = z.object({
+  platform: z.string(),
+  content: z.string(),
+});
+export type PlatformVariant = z.infer<typeof platformVariantSchema>;
+
+export const generatedCopyVariantSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  angle: z.string(),
+  why_it_works: z.string(),
   headline: z.string(),
   hook: z.string(),
   body: z.string(),
   short_version: z.string(),
   cta: z.string(),
   hashtags: z.array(z.string()).default([]),
-  platform_variants: z
-    .array(
-      z.object({
-        platform: z.string(),
-        content: z.string(),
-      }),
-    )
-    .default([]),
+  platform_variants: z.array(platformVariantSchema).default([]),
+});
+export type GeneratedCopyVariant = z.infer<typeof generatedCopyVariantSchema>;
+
+export const generatedCopySchema = z.object({
+  copy_mode: copyModeSchema.default("sales"),
+  recommended_variant_id: z.string().default("variant-1"),
+  recommendation_reason: z.string().default(""),
+  variants: z.array(generatedCopyVariantSchema).min(2).max(3).default([]),
+  headline: z.string(),
+  hook: z.string(),
+  body: z.string(),
+  short_version: z.string(),
+  cta: z.string(),
+  hashtags: z.array(z.string()).default([]),
+  platform_variants: z.array(platformVariantSchema).default([]),
 });
 export type GeneratedCopy = z.infer<typeof generatedCopySchema>;
 
@@ -105,11 +149,28 @@ export const imageConceptSchema = z.object({
 });
 export type ImageConcept = z.infer<typeof imageConceptSchema>;
 
+export const imageDirectionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  purpose: z.string(),
+  visual_description: z.string(),
+  image_prompt: z.string(),
+});
+export type ImageDirection = z.infer<typeof imageDirectionSchema>;
+
+export const imageDirectionSetSchema = z.object({
+  directions: z.array(imageDirectionSchema).min(2).max(4),
+});
+export type ImageDirectionSet = z.infer<typeof imageDirectionSetSchema>;
+
 export const generatedImageSchema = z.object({
   base64: z.string().nullable(),
   url: z.string().nullable(),
   model: z.string(),
   prompt: z.string(),
+  direction_id: z.string().default(""),
+  direction_title: z.string().default(""),
+  parent_asset_id: z.string().optional(),
 });
 export type GeneratedImage = z.infer<typeof generatedImageSchema>;
 
@@ -142,6 +203,13 @@ export type RevisionKind =
 
 export interface AiProvider {
   name: string;
+
+  continueConsultation(input: {
+    knownBrief: PartialBrief;
+    history: Array<{ role: "user" | "assistant"; content: string }>;
+    userMessage: string;
+  }): Promise<WithUsage<ConsultantTurn>>;
+
   determineNextQuestion(input: {
     knownBrief: PartialBrief;
     history: ConsultantAnswer[];
@@ -159,9 +227,29 @@ export interface AiProvider {
     copy: GeneratedCopy;
   }): Promise<WithUsage<ImageConcept>>;
 
+  generateImageDirections(input: {
+    brief: MarketingBrief;
+    copy: GeneratedCopy;
+    count: 2 | 3 | 4;
+  }): Promise<WithUsage<ImageDirection[]>>;
+
   generateMarketingImage(input: {
     prompt: string;
     aspect?: "1:1" | "4:5" | "16:9" | "9:16";
+    directionId?: string;
+    directionTitle?: string;
+  }): Promise<WithUsage<GeneratedImage>>;
+
+  generateMarketingImages(input: {
+    directions: ImageDirection[];
+    aspect?: "1:1" | "4:5" | "16:9" | "9:16";
+  }): Promise<WithUsage<GeneratedImage[]>>;
+
+  editMarketingImage(input: {
+    base64: string;
+    instruction: string;
+    aspect?: "1:1" | "4:5" | "16:9" | "9:16";
+    parentAssetId?: string;
   }): Promise<WithUsage<GeneratedImage>>;
 
   reviseGeneratedContent(input: {
