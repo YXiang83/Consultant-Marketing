@@ -32,15 +32,16 @@ export async function POST(req: Request) {
   const reservation = await checkAndReserve(user.id, "copy", 1);
   if (!reservation.ok) {
     return NextResponse.json(
-      { error: reservation.reason === "over_limit" ? "over_limit" : "no_subscription" },
-      { status: 402 },
+      { error: reservation.reason, details: reservation.details },
+      { status: reservation.reason === "configuration_error" ? 503 : 402 },
     );
   }
 
   try {
     const { data: copy, usage } = await aiProvider().generateMarketingCopy({ brief });
+    if (!copy?.variants?.length) throw new Error("Copy generation returned no usable variants");
 
-    await supabase.from("generated_assets").insert({
+    const { error: assetError } = await supabase.from("generated_assets").insert({
       project_id: projectId,
       user_id: user.id,
       asset_type: "copy",
@@ -48,10 +49,13 @@ export async function POST(req: Request) {
       model: usage.model,
       generation_status: "ready",
     });
-    await supabase
+    if (assetError) throw assetError;
+
+    const { error: projectError } = await supabase
       .from("projects")
       .update({ status: "completed", updated_at: new Date().toISOString() })
       .eq("id", projectId);
+    if (projectError) throw projectError;
 
     await recordUsageEvent({
       userId: user.id,
@@ -59,6 +63,7 @@ export async function POST(req: Request) {
       eventType: "generate_copy",
       status: "success",
       usage,
+      metadata: { variant_count: copy.variants.length },
     });
 
     return NextResponse.json({ copy });
@@ -72,6 +77,9 @@ export async function POST(req: Request) {
       usage: { provider: aiProvider().name, model: "unknown" },
       metadata: { message: err instanceof Error ? err.message : String(err) },
     });
-    return new NextResponse("Generation failed", { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Generation failed" },
+      { status: 500 },
+    );
   }
 }
