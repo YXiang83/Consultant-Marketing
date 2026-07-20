@@ -8,6 +8,7 @@ const publicSchema = z.object({
 
 const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
+  ADMIN_EMAIL: z.string().email().optional(),
   OPENAI_API_KEY: z.string().min(20).optional(),
   OPENAI_TEXT_MODEL: z.string().default("gpt-5"),
   OPENAI_IMAGE_MODEL: z.string().default("gpt-image-1"),
@@ -36,6 +37,7 @@ export function publicEnv() {
 export function serverEnv() {
   const parsed = serverSchema.safeParse({
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    ADMIN_EMAIL: process.env.ADMIN_EMAIL,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     OPENAI_TEXT_MODEL: process.env.OPENAI_TEXT_MODEL,
     OPENAI_IMAGE_MODEL: process.env.OPENAI_IMAGE_MODEL,
