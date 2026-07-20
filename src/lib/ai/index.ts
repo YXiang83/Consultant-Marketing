@@ -9,10 +9,16 @@ let cached: AiProvider | null = null;
 export function aiProvider(): AiProvider {
   if (cached) return cached;
   const env = serverEnv();
-  if (env.AI_PROVIDER === "openai" && env.OPENAI_API_KEY) {
-    cached = openAiProvider();
-  } else {
+
+  if (env.AI_PROVIDER === "mock") {
     cached = mockProvider();
+    return cached;
   }
+
+  if (!env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is missing. Add it to the server environment before using the consultant.");
+  }
+
+  cached = openAiProvider();
   return cached;
 }
