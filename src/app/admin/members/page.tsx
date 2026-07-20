@@ -6,6 +6,7 @@ import {
   adjustQuotaAction,
   pauseMemberAction,
   resumeMemberAction,
+  updateMemberProfileAction,
 } from "../actions";
 
 function formatDate(value: string | null) {
@@ -40,7 +41,7 @@ export default async function MembersAdminPage({
           <p className="text-sm text-neutral-500">Only the configured administrator can use this page.</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">Members</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">
-            Registered users remain pending until you start a plan. Every activation, pause, resume, plan change, and quota adjustment is audited.
+            Registered users remain pending until you start a plan. Profile changes, activation, pause, resume, plan changes, and quota adjustments are all audited.
           </p>
         </header>
 
@@ -58,6 +59,7 @@ export default async function MembersAdminPage({
                 <div>
                   <h2 className="text-lg font-semibold">{member.displayName}</h2>
                   <p className="text-sm text-neutral-600">{member.email}</p>
+                  {member.phone && <p className="mt-1 text-xs text-neutral-500">{member.phone}</p>}
                 </div>
                 <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusClass(member.status)}`}>
                   {member.status}
@@ -89,8 +91,37 @@ export default async function MembersAdminPage({
               </div>
 
               <details className="mt-5 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Manage membership</summary>
+                <summary className="cursor-pointer text-sm font-semibold">Manage member</summary>
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <form action={updateMemberProfileAction} className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4 lg:col-span-2">
+                    <input type="hidden" name="userId" value={member.id} />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block text-sm font-medium">
+                        Display name
+                        <Input name="displayName" defaultValue={member.displayName} maxLength={120} />
+                      </label>
+                      <label className="block text-sm font-medium">
+                        Phone
+                        <Input name="phone" defaultValue={member.phone ?? ""} maxLength={60} />
+                      </label>
+                    </div>
+                    <label className="block text-sm font-medium">
+                      Internal notes
+                      <textarea
+                        name="internalNotes"
+                        defaultValue={member.internalNotes ?? ""}
+                        maxLength={2000}
+                        rows={3}
+                        className="mt-1 block w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium">
+                      Change reason
+                      <Input name="reason" required minLength={3} maxLength={500} placeholder="Corrected name, updated phone, added account note…" />
+                    </label>
+                    <Button type="submit" variant="outline">Save member details</Button>
+                  </form>
+
                   <form action={activateMemberAction} className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4">
                     <input type="hidden" name="userId" value={member.id} />
                     <label className="block text-sm font-medium">
