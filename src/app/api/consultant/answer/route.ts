@@ -12,17 +12,19 @@ const bodySchema = z.object({
 function mergeIntoBrief(brief: PartialBrief, step: string, answer: string | string[]): PartialBrief {
   const b: PartialBrief = { ...brief, audience: { ...brief.audience } };
   const text = Array.isArray(answer) ? answer.join(", ") : answer;
+
   switch (step) {
-    case "content_type": {
-      const allowed = ["social_post","ad_copy","product_promo","service_promo","event_promo","brand_content","other"] as const;
-      const normalized = text.toLowerCase().replace(/\s+/g, "_");
-      if ((allowed as readonly string[]).includes(normalized)) {
-        b.content_type = normalized as PartialBrief["content_type"];
-      }
-      break;
-    }
     case "product":
       b.product_or_service = text;
+      b.short_description = text;
+      break;
+    case "copy_mode":
+      b.copy_mode = text === "内容型" || text === "content" ? "content" : "sales";
+      b.content_type = b.copy_mode === "content" ? "social_post" : "ad_copy";
+      b.goal = b.copy_mode === "content" ? "建立信任" : "收到更多询问";
+      break;
+    case "angle":
+      b.selected_angle = text;
       break;
     case "goal":
       b.goal = text;
@@ -40,6 +42,7 @@ function mergeIntoBrief(brief: PartialBrief, step: string, answer: string | stri
       b.cta = text;
       break;
   }
+
   return b;
 }
 
