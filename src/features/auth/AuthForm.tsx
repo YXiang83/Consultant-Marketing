@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,18 +10,13 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type Mode = "login" | "register" | "forgot";
 
-export function AuthForm(props: { mode: Mode }) {
-  return (
-    <Suspense fallback={<div className="text-sm text-neutral-500">Loading…</div>}>
-      <AuthFormInner {...props} />
-    </Suspense>
-  );
-}
+type AuthFormProps = {
+  mode: Mode;
+  nextPath?: string;
+};
 
-function AuthFormInner({ mode }: { mode: Mode }) {
+export function AuthForm({ mode, nextPath = "/home" }: AuthFormProps) {
   const router = useRouter();
-  const search = useSearchParams();
-  const next = search.get("next") || "/home";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -34,12 +29,14 @@ function AuthFormInner({ mode }: { mode: Mode }) {
     setLoading(true);
     setError(null);
     setInfo(null);
-    const supabase = supabaseBrowser();
+
     try {
+      const supabase = supabaseBrowser();
+
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.replace(next);
+        router.replace(nextPath);
         router.refresh();
       } else if (mode === "register") {
         const { error } = await supabase.auth.signUp({
