@@ -65,7 +65,10 @@ export async function POST(req: Request) {
 
   const reservation = await checkAndReserve(user.id, "copy", 1);
   if (!reservation.ok) {
-    return NextResponse.json({ error: reservation.reason }, { status: 402 });
+    return NextResponse.json(
+      { error: reservation.reason, details: reservation.details },
+      { status: reservation.reason === "configuration_error" ? 503 : 402 },
+    );
   }
 
   try {
@@ -75,8 +78,9 @@ export async function POST(req: Request) {
       kind: kind as RevisionKind,
       instruction,
     });
+    if (!revised?.variants?.length) throw new Error("Revision returned no usable copy variants");
 
-    await supabase.from("generated_assets").insert({
+    const { error: insertError } = await supabase.from("generated_assets").insert({
       project_id: projectId,
       user_id: user.id,
       asset_type: "copy",
@@ -86,6 +90,7 @@ export async function POST(req: Request) {
       generation_status: "ready",
       metadata: { revision_kind: kind },
     });
+    if (insertError) throw insertError;
 
     await recordUsageEvent({
       userId: user.id,
@@ -93,7 +98,7 @@ export async function POST(req: Request) {
       eventType: "revise_copy",
       status: "success",
       usage,
-      metadata: { kind },
+      metadata: { kind, variant_count: revised.variants.length },
     });
 
     return NextResponse.json({ copy: revised });
@@ -105,8 +110,11 @@ export async function POST(req: Request) {
       eventType: "revise_copy",
       status: "error",
       usage: { provider: aiProvider().name, model: "unknown" },
-      metadata: { message: err instanceof Error ? err.message : String(err) },
+      metadata: { message: err instanceof Error ? err.message : String(err), kind },
     });
-    return new NextResponse("Revision failed", { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Revision failed" },
+      { status: 500 },
+    );
   }
 }
