@@ -40,11 +40,12 @@ export default function ConsultantFlowPage() {
       const data = (await res.json()) as { question: NextQuestion; brief: PartialBrief };
       setBrief(data.brief);
       setQuestion(data.question);
+      if (data.question.recommended_option) setChoiceValue(data.question.recommended_option);
       if (data.question.is_complete) {
         router.push(`/projects/${params.projectId}/brief/${params.sessionId}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(err instanceof Error ? err.message : "发生了一点问题，请再试一次。");
     } finally {
       setLoading(false);
     }
@@ -58,7 +59,7 @@ export default function ConsultantFlowPage() {
     else value = multiValue;
 
     if ((typeof value === "string" && !value) || (Array.isArray(value) && value.length === 0)) {
-      setError("Please give an answer to continue.");
+      setError("先选一个方向，或写一点资料再继续。");
       return;
     }
 
@@ -74,7 +75,7 @@ export default function ConsultantFlowPage() {
       const data = (await res.json()) as { brief: PartialBrief };
       await loadNext(data.brief);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save your answer");
+      setError(err instanceof Error ? err.message : "无法保存，请再试一次。");
     } finally {
       setAnswering(false);
     }
@@ -84,7 +85,7 @@ export default function ConsultantFlowPage() {
     return (
       <main className="flex flex-col items-center justify-center gap-3 px-6 pt-16">
         <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-900 border-t-transparent" />
-        <p className="text-sm text-neutral-500">Thinking of the next question…</p>
+        <p className="text-sm text-neutral-500">顾问正在判断最适合的方向…</p>
       </main>
     );
   }
@@ -92,24 +93,40 @@ export default function ConsultantFlowPage() {
   if (!question) {
     return (
       <main className="px-6 pt-8">
-        <p className="text-sm text-red-700">{error || "No question loaded."}</p>
+        <p className="text-sm text-red-700">{error || "暂时无法载入顾问。"}</p>
       </main>
     );
   }
 
   return (
-    <main className="flex flex-col gap-6 px-6 pb-6 pt-8">
-      <header>
-        <p className="text-xs uppercase tracking-wide text-neutral-500">Step · {question.step}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{question.question}</h1>
-        {question.helper && <p className="mt-1 text-sm text-neutral-500">{question.helper}</p>}
+    <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-5 pb-8 pt-6">
+      <header className="space-y-3">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-neutral-500">Marketing consultant</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-950">{question.question}</h1>
+        {question.helper && <p className="text-sm leading-6 text-neutral-600">{question.helper}</p>}
       </header>
 
+      {question.recommended_option && (
+        <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">我的建议</p>
+          <p className="mt-1 text-base font-semibold text-emerald-950">{question.recommended_option}</p>
+          {question.recommendation_reason && (
+            <p className="mt-1 text-sm leading-6 text-emerald-900">{question.recommendation_reason}</p>
+          )}
+        </section>
+      )}
+
       {(question.input_type === "text" || question.input_type === "long_text") && (
-        <div>
-          <Label htmlFor="answer">Your answer</Label>
+        <div className="space-y-2">
+          <Label htmlFor="answer">随便说，不需要整理</Label>
           {question.input_type === "long_text" ? (
-            <Textarea id="answer" value={textValue} onChange={(e) => setTextValue(e.target.value)} rows={5} />
+            <Textarea
+              id="answer"
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              rows={7}
+              placeholder="例如：我在新山卖靠近 CIQ 的公寓，六十多万，想吸引在新加坡工作的人…"
+            />
           ) : (
             <Input id="answer" value={textValue} onChange={(e) => setTextValue(e.target.value)} />
           )}
@@ -117,25 +134,34 @@ export default function ConsultantFlowPage() {
       )}
 
       {question.input_type === "single_choice" && (
-        <ul role="radiogroup" className="space-y-2">
-          {question.options.map((opt) => (
-            <li key={opt}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={choiceValue === opt}
-                onClick={() => setChoiceValue(opt)}
-                className={
-                  "flex w-full items-center rounded-xl border px-4 py-3 text-left " +
-                  (choiceValue === opt
-                    ? "border-neutral-900 bg-neutral-900 text-white"
-                    : "border-neutral-200 bg-white")
-                }
-              >
-                {opt}
-              </button>
-            </li>
-          ))}
+        <ul role="radiogroup" className="space-y-3">
+          {question.options.map((opt) => {
+            const selected = choiceValue === opt;
+            const recommended = question.recommended_option === opt;
+            return (
+              <li key={opt}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setChoiceValue(opt)}
+                  className={
+                    "flex w-full items-start justify-between gap-4 rounded-2xl border px-4 py-4 text-left transition " +
+                    (selected
+                      ? "border-neutral-950 bg-neutral-950 text-white"
+                      : "border-neutral-200 bg-white text-neutral-950 hover:border-neutral-400")
+                  }
+                >
+                  <span className="font-medium">{opt}</span>
+                  {recommended && (
+                    <span className={"shrink-0 rounded-full px-2 py-1 text-xs " + (selected ? "bg-white/15" : "bg-emerald-100 text-emerald-800")}>
+                      推荐
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -148,14 +174,10 @@ export default function ConsultantFlowPage() {
                 <button
                   type="button"
                   aria-pressed={checked}
-                  onClick={() =>
-                    setMultiValue((prev) => (prev.includes(opt) ? prev.filter((p) => p !== opt) : [...prev, opt]))
-                  }
+                  onClick={() => setMultiValue((prev) => (prev.includes(opt) ? prev.filter((p) => p !== opt) : [...prev, opt]))}
                   className={
                     "rounded-full border px-4 py-2 text-sm " +
-                    (checked
-                      ? "border-neutral-900 bg-neutral-900 text-white"
-                      : "border-neutral-200 bg-white text-neutral-900")
+                    (checked ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-900")
                   }
                 >
                   {opt}
@@ -167,13 +189,13 @@ export default function ConsultantFlowPage() {
       )}
 
       {error && (
-        <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+        <div role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
         </div>
       )}
 
       <Button size="block" loading={answering} onClick={submitAnswer}>
-        Next
+        {question.recommended_option && choiceValue === question.recommended_option ? "采用这个建议" : "继续"}
       </Button>
     </main>
   );
