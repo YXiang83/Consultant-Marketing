@@ -2,13 +2,25 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type Mode = "login" | "register" | "forgot";
+
+async function withClientTimeout<T>(promise: Promise<T>, milliseconds = 15_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("The request took too long. Please try again.")), milliseconds);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export function AuthForm(props: { mode: Mode }) {
   return (
@@ -19,7 +31,6 @@ export function AuthForm(props: { mode: Mode }) {
 }
 
 function AuthFormInner({ mode }: { mode: Mode }) {
-  const router = useRouter();
   const search = useSearchParams();
   const next = search.get("next") || "/home";
   const [email, setEmail] = useState("");
@@ -31,34 +42,65 @@ function AuthFormInner({ mode }: { mode: Mode }) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
+
     setLoading(true);
     setError(null);
     setInfo(null);
-    const supabase = supabaseBrowser();
+
     try {
       if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        router.replace(next);
-        router.refresh();
-      } else if (mode === "register") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { display_name: name } },
-        });
-        if (error) throw error;
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 18_000);
+        try {
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "same-origin",
+            signal: controller.signal,
+            body: JSON.stringify({ email, password, next }),
+          });
+          const payload = (await response.json().catch(() => null)) as
+            | { ok?: boolean; next?: string; error?: string }
+            | null;
+          if (!response.ok || !payload?.ok) {
+            throw new Error(payload?.error || "Login could not be completed.");
+          }
+          window.location.assign(payload.next || "/home");
+          return;
+        } finally {
+          window.clearTimeout(timer);
+        }
+      }
+
+      const supabase = supabaseBrowser();
+      if (mode === "register") {
+        const { error: signUpError } = await withClientTimeout(
+          supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { display_name: name } },
+          }),
+        );
+        if (signUpError) throw signUpError;
         setInfo("Check your email to confirm your account, then log in.");
       } else {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${origin}/reset-password`,
-        });
-        if (error) throw error;
+        const { error: resetError } = await withClientTimeout(
+          supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: `${origin}/reset-password`,
+          }),
+        );
+        if (resetError) throw resetError;
         setInfo("If an account exists, we've sent a reset link.");
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong";
+      const message =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Login took too long. Please try again."
+          : err instanceof Error
+            ? err.message
+            : "Something went wrong";
       setError(message);
     } finally {
       setLoading(false);
