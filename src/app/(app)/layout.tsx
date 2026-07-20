@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { FolderClosed, Home, ShieldCheck, User } from "lucide-react";
 import { publicEnvSafe } from "@/lib/env";
-import { getMembershipAccess } from "@/lib/membership";
+import { getStrictMembershipAccess } from "@/lib/membership-access";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -24,8 +24,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
 
-  const access = await getMembershipAccess(data.user);
-  if (access.configured && !access.allowed) redirect("/membership-status");
+  const access = await getStrictMembershipAccess(data.user);
+  if (!access.allowed) redirect("/membership-status");
 
   const columns = access.isAdmin ? "grid-cols-4" : "grid-cols-3";
 
