@@ -2,11 +2,34 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import { isConfiguredAdmin, type MemberStatus, type MembershipAccess, type MembershipPlan } from "@/lib/membership";
-import { APP_DB_SCHEMA, supabaseServer } from "@/lib/supabase/server";
+import { APP_DB_SCHEMA, supabaseAdmin, supabaseServer } from "@/lib/supabase/server";
 
 export async function getStrictMembershipAccess(user: User): Promise<MembershipAccess> {
   if (isConfiguredAdmin(user)) {
     return { configured: true, allowed: true, status: "active", isAdmin: true };
+  }
+
+  try {
+    const { error: refreshError } = await supabaseAdmin().rpc("refresh_membership_period", {
+      p_user_id: user.id,
+    });
+    if (refreshError) {
+      return {
+        configured: false,
+        allowed: false,
+        status: "pending",
+        reason: refreshError.message,
+        isAdmin: false,
+      };
+    }
+  } catch (error) {
+    return {
+      configured: false,
+      allowed: false,
+      status: "pending",
+      reason: error instanceof Error ? error.message : "Membership period could not be verified",
+      isAdmin: false,
+    };
   }
 
   const supabase = await supabaseServer();
