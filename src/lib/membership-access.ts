@@ -36,7 +36,7 @@ export async function getStrictMembershipAccess(user: User): Promise<MembershipA
   const db = supabase.schema(APP_DB_SCHEMA);
   const [{ data: member, error: memberError }, { data: subscription, error: subscriptionError }] =
     await Promise.all([
-      db.from("members").select("role, status").eq("id", user.id).maybeSingle(),
+      db.from("members").select("status").eq("id", user.id).maybeSingle(),
       db
         .from("subscriptions")
         .select("status, current_period_end, plan:plans(billing_type, resets_monthly)")
@@ -52,11 +52,6 @@ export async function getStrictMembershipAccess(user: User): Promise<MembershipA
       reason: memberError?.message || subscriptionError?.message,
       isAdmin: false,
     };
-  }
-
-  const role = member?.role as "member" | "admin" | undefined;
-  if (role === "admin") {
-    return { configured: true, allowed: true, status: "active", isAdmin: true };
   }
 
   const status = (member?.status as MemberStatus | undefined) ?? "pending";
