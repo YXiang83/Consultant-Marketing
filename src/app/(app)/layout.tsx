@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { supabaseServer } from "@/lib/supabase/server";
+import { FolderClosed, Home, ShieldCheck, User } from "lucide-react";
 import { publicEnvSafe } from "@/lib/env";
-import { Home, FolderClosed, User } from "lucide-react";
+import { getStrictMembershipAccess } from "@/lib/membership-access";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +19,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </main>
     );
   }
+
   const supabase = await supabaseServer();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
+
+  const access = await getStrictMembershipAccess(data.user);
+  if (!access.allowed) redirect("/membership-status");
+
+  const columns = access.isAdmin ? "grid-cols-4" : "grid-cols-3";
 
   return (
     <div className="flex flex-1 flex-col">
@@ -29,9 +36,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-10 mx-auto max-w-md border-t border-neutral-200 bg-white/95 backdrop-blur"
       >
-        <ul className="grid grid-cols-3">
+        <ul className={`grid ${columns}`}>
           <NavItem href="/home" label="Home" icon={<Home className="h-5 w-5" />} />
           <NavItem href="/projects" label="Projects" icon={<FolderClosed className="h-5 w-5" />} />
+          {access.isAdmin && <NavItem href="/admin/members" label="Admin" icon={<ShieldCheck className="h-5 w-5" />} />}
           <NavItem href="/account" label="Account" icon={<User className="h-5 w-5" />} />
         </ul>
       </nav>

@@ -57,6 +57,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: reservation.reason }, { status: 402 });
   }
 
+  let refundableReservation: number = count;
+
   try {
     const provider = aiProvider();
     const { data: directions, usage: directionUsage } = await provider.generateImageDirections({
@@ -69,18 +71,30 @@ export async function POST(req: Request) {
       aspect,
     });
 
-    await supabase.from("generated_assets").insert({
+    const successfulImages = images.filter((image) => image.base64 || image.url);
+    const successfulCount = successfulImages.length;
+    const partialRefund = Math.max(0, count - successfulCount);
+    if (partialRefund > 0) {
+      await refundOnFailure(user.id, "image", partialRefund);
+      refundableReservation -= partialRefund;
+    }
+    if (successfulCount === 0) {
+      throw new Error("Image generation returned no usable images");
+    }
+
+    const { error: conceptError } = await supabase.from("generated_assets").insert({
       project_id: projectId,
       user_id: user.id,
       asset_type: "concept",
       content: { directions, aspect },
       model: directionUsage.model,
       generation_status: "ready",
-      metadata: { count },
+      metadata: { requested_count: count, successful_count: successfulCount },
     });
+    if (conceptError) throw conceptError;
 
-    await supabase.from("generated_assets").insert(
-      images.map((image, index) => ({
+    const { error: imageInsertError } = await supabase.from("generated_assets").insert(
+      successfulImages.map((image, index) => ({
         project_id: projectId,
         user_id: user.id,
         asset_type: "image",
@@ -88,39 +102,48 @@ export async function POST(req: Request) {
         content: image,
         prompt_snapshot: image.prompt,
         model: image.model,
-        generation_status: image.base64 || image.url ? "ready" : "failed",
+        generation_status: "ready",
         metadata: {
           direction_id: image.direction_id,
           direction_title: image.direction_title,
           aspect,
-          batch_size: count,
+          requested_batch_size: count,
+          successful_batch_size: successfulCount,
         },
       })),
     );
+    if (imageInsertError) throw imageInsertError;
 
     await recordUsageEvent({
       userId: user.id,
       projectId,
       eventType: "generate_image",
-      status: images.some((image) => image.base64 || image.url) ? "success" : "error",
-      usage: imageUsage,
-      metadata: { count, aspect },
+      status: "success",
+      usage: { ...imageUsage, image_count: successfulCount },
+      metadata: {
+        requested_count: count,
+        successful_count: successfulCount,
+        refunded_count: partialRefund,
+        aspect,
+      },
     });
 
-    return NextResponse.json({ images, directions });
+    refundableReservation = 0;
+    return NextResponse.json({ images: successfulImages, directions });
   } catch (err) {
-    await refundOnFailure(user.id, "image", count);
+    if (refundableReservation > 0) {
+      await refundOnFailure(user.id, "image", refundableReservation);
+      refundableReservation = 0;
+    }
+    const message = err instanceof Error ? err.message : String(err);
     await recordUsageEvent({
       userId: user.id,
       projectId,
       eventType: "generate_image",
       status: "error",
-      usage: { provider: aiProvider().name, model: "unknown", image_count: count },
-      metadata: { message: err instanceof Error ? err.message : String(err), count, aspect },
+      usage: { provider: aiProvider().name, model: "unknown", image_count: 0 },
+      metadata: { message, requested_count: count, aspect },
     });
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Image generation failed" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: message || "Image generation failed" }, { status: 500 });
   }
 }

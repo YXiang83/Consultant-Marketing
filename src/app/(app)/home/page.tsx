@@ -6,9 +6,9 @@ import { PlusCircle } from "lucide-react";
 
 export default async function HomePage() {
   const supabase = await supabaseServer();
-  const [{ data: userRes }, { data: profile }, { data: balance }, { data: projects }] = await Promise.all([
+  const [{ data: userRes }, { data: member }, { data: balance }, { data: projects }] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("profiles").select("display_name").maybeSingle(),
+    supabase.from("members").select("display_name").maybeSingle(),
     supabase
       .from("usage_balances")
       .select("copy_used, copy_limit, image_used, image_limit, period_end")
@@ -22,7 +22,7 @@ export default async function HomePage() {
       .limit(5),
   ]);
 
-  const name = profile?.display_name || userRes.user?.email?.split("@")[0] || "there";
+  const name = member?.display_name || userRes.user?.email?.split("@")[0] || "there";
   const copyRemaining = balance ? balance.copy_limit - balance.copy_used : 0;
   const imageRemaining = balance ? balance.image_limit - balance.image_used : 0;
 

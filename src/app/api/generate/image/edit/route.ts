@@ -12,13 +12,11 @@ const bodySchema = z.object({
   aspect: z.enum(["1:1", "4:5", "16:9", "9:16"]).default("4:5"),
 });
 
-async function imageToBase64(image: { base64: string | null; url: string | null }) {
+function editableBase64(image: { base64: string | null; url: string | null }) {
   if (image.base64) return image.base64;
-  if (!image.url) throw new Error("Selected image has no editable source");
-  const response = await fetch(image.url);
-  if (!response.ok) throw new Error("Could not load selected image");
-  const bytes = await response.arrayBuffer();
-  return Buffer.from(bytes).toString("base64");
+  // Do not server-fetch arbitrary stored URLs. A user-editable URL field would
+  // otherwise create an SSRF path into private infrastructure.
+  throw new Error("Selected image has no securely stored editable source");
 }
 
 export async function POST(req: Request) {
@@ -52,18 +50,24 @@ export async function POST(req: Request) {
   if (!parsedImage.success) return new NextResponse("Image data is invalid", { status: 400 });
 
   const reservation = await checkAndReserve(user.id, "image", 1);
-  if (!reservation.ok) return NextResponse.json({ error: reservation.reason }, { status: 402 });
+  if (!reservation.ok) {
+    return NextResponse.json(
+      { error: reservation.reason, details: reservation.details },
+      { status: reservation.reason === "configuration_error" ? 503 : 402 },
+    );
+  }
 
   try {
-    const base64 = await imageToBase64(parsedImage.data);
+    const base64 = editableBase64(parsedImage.data);
     const { data: edited, usage } = await aiProvider().editMarketingImage({
       base64,
       instruction,
       aspect,
       parentAssetId: sourceAsset.id,
     });
+    if (!edited.base64 && !edited.url) throw new Error("Image edit returned no usable image");
 
-    const { data: latest } = await supabase
+    const { data: latest, error: latestError } = await supabase
       .from("generated_assets")
       .select("version")
       .eq("project_id", projectId)
@@ -71,8 +75,9 @@ export async function POST(req: Request) {
       .order("version", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (latestError) throw latestError;
 
-    const { data: inserted } = await supabase
+    const { data: inserted, error: insertError } = await supabase
       .from("generated_assets")
       .insert({
         project_id: projectId,
@@ -82,7 +87,7 @@ export async function POST(req: Request) {
         content: edited,
         prompt_snapshot: instruction,
         model: usage.model,
-        generation_status: edited.base64 || edited.url ? "ready" : "failed",
+        generation_status: "ready",
         metadata: {
           parent_asset_id: sourceAsset.id,
           edit_instruction: instruction,
@@ -91,27 +96,27 @@ export async function POST(req: Request) {
       })
       .select("id")
       .single();
+    if (insertError) throw insertError;
 
     await recordUsageEvent({
       userId: user.id,
       projectId,
-      eventType: "generate_image",
-      status: edited.base64 || edited.url ? "success" : "error",
-      usage,
-      metadata: { action: "edit", parent_asset_id: sourceAsset.id, instruction, aspect },
+      eventType: "edit_image",
+      status: "success",
+      usage: { ...usage, image_count: 1 },
+      metadata: { parent_asset_id: sourceAsset.id, instruction, aspect },
     });
 
-    return NextResponse.json({ image: edited, assetId: inserted?.id ?? null });
+    return NextResponse.json({ image: edited, assetId: inserted.id });
   } catch (error) {
     await refundOnFailure(user.id, "image", 1);
     await recordUsageEvent({
       userId: user.id,
       projectId,
-      eventType: "generate_image",
+      eventType: "edit_image",
       status: "error",
-      usage: { provider: aiProvider().name, model: "unknown", image_count: 1 },
+      usage: { provider: aiProvider().name, model: "unknown", image_count: 0 },
       metadata: {
-        action: "edit",
         parent_asset_id: sourceAsset.id,
         message: error instanceof Error ? error.message : String(error),
       },

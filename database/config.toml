@@ -1,0 +1,13 @@
+# Supabase CLI workdir for Consultant Marketing database migrations.
+# Run commands from the repository root with: supabase --workdir database ...
+project_id = "consultant-marketing-staging"
+
+[db]
+major_version = 17
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+enabled = false

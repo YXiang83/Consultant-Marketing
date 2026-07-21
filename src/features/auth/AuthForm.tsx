@@ -2,13 +2,40 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type Mode = "login" | "register" | "forgot";
+
+type AuthPayload = {
+  ok?: boolean;
+  next?: string | null;
+  message?: string;
+  error?: string;
+};
+
+async function postAuth(path: string, body: Record<string, unknown>) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 18_000);
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      signal: controller.signal,
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json().catch(() => null)) as AuthPayload | null;
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.error || "The request could not be completed.");
+    }
+    return payload;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 export function AuthForm(props: { mode: Mode }) {
   return (
@@ -19,7 +46,6 @@ export function AuthForm(props: { mode: Mode }) {
 }
 
 function AuthFormInner({ mode }: { mode: Mode }) {
-  const router = useRouter();
   const search = useSearchParams();
   const next = search.get("next") || "/home";
   const [email, setEmail] = useState("");
@@ -31,34 +57,43 @@ function AuthFormInner({ mode }: { mode: Mode }) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
+
     setLoading(true);
     setError(null);
     setInfo(null);
-    const supabase = supabaseBrowser();
+
     try {
       if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        router.replace(next);
-        router.refresh();
-      } else if (mode === "register") {
-        const { error } = await supabase.auth.signUp({
+        const payload = await postAuth("/api/auth/login", { email, password, next });
+        window.location.assign(payload.next || "/home");
+        return;
+      }
+
+      const origin = window.location.origin;
+      if (mode === "register") {
+        const payload = await postAuth("/api/auth/register", {
           email,
           password,
-          options: { data: { display_name: name } },
+          name,
+          origin,
         });
-        if (error) throw error;
-        setInfo("Check your email to confirm your account, then log in.");
+        if (payload.next) {
+          window.location.assign(payload.next);
+          return;
+        }
+        setInfo(payload.message || "Check your email to confirm your account, then log in.");
       } else {
-        const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${origin}/reset-password`,
-        });
-        if (error) throw error;
-        setInfo("If an account exists, we've sent a reset link.");
+        const payload = await postAuth("/api/auth/password-reset", { email, origin });
+        setInfo(payload.message || "If an account exists, we've sent a reset link.");
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong";
+      const message =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "The request took too long. Please try again."
+          : err instanceof Error
+            ? err.message
+            : "Something went wrong";
       setError(message);
     } finally {
       setLoading(false);
