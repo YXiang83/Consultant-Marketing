@@ -6,19 +6,34 @@ import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type Mode = "login" | "register" | "forgot";
 
-async function withClientTimeout<T>(promise: Promise<T>, milliseconds = 15_000): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("The request took too long. Please try again.")), milliseconds);
-  });
+type AuthPayload = {
+  ok?: boolean;
+  next?: string | null;
+  message?: string;
+  error?: string;
+};
+
+async function postAuth(path: string, body: Record<string, unknown>) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 18_000);
   try {
-    return await Promise.race([promise, timeout]);
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      signal: controller.signal,
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json().catch(() => null)) as AuthPayload | null;
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.error || "The request could not be completed.");
+    }
+    return payload;
   } finally {
-    if (timer) clearTimeout(timer);
+    window.clearTimeout(timer);
   }
 }
 
@@ -50,54 +65,32 @@ function AuthFormInner({ mode }: { mode: Mode }) {
 
     try {
       if (mode === "login") {
-        const controller = new AbortController();
-        const timer = window.setTimeout(() => controller.abort(), 18_000);
-        try {
-          const response = await fetch("/api/auth/login", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            credentials: "same-origin",
-            signal: controller.signal,
-            body: JSON.stringify({ email, password, next }),
-          });
-          const payload = (await response.json().catch(() => null)) as
-            | { ok?: boolean; next?: string; error?: string }
-            | null;
-          if (!response.ok || !payload?.ok) {
-            throw new Error(payload?.error || "Login could not be completed.");
-          }
-          window.location.assign(payload.next || "/home");
-          return;
-        } finally {
-          window.clearTimeout(timer);
-        }
+        const payload = await postAuth("/api/auth/login", { email, password, next });
+        window.location.assign(payload.next || "/home");
+        return;
       }
 
-      const supabase = supabaseBrowser();
+      const origin = window.location.origin;
       if (mode === "register") {
-        const { error: signUpError } = await withClientTimeout(
-          supabase.auth.signUp({
-            email,
-            password,
-            options: { data: { display_name: name } },
-          }),
-        );
-        if (signUpError) throw signUpError;
-        setInfo("Check your email to confirm your account, then log in.");
+        const payload = await postAuth("/api/auth/register", {
+          email,
+          password,
+          name,
+          origin,
+        });
+        if (payload.next) {
+          window.location.assign(payload.next);
+          return;
+        }
+        setInfo(payload.message || "Check your email to confirm your account, then log in.");
       } else {
-        const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const { error: resetError } = await withClientTimeout(
-          supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${origin}/reset-password`,
-          }),
-        );
-        if (resetError) throw resetError;
-        setInfo("If an account exists, we've sent a reset link.");
+        const payload = await postAuth("/api/auth/password-reset", { email, origin });
+        setInfo(payload.message || "If an account exists, we've sent a reset link.");
       }
     } catch (err) {
       const message =
         err instanceof DOMException && err.name === "AbortError"
-          ? "Login took too long. Please try again."
+          ? "The request took too long. Please try again."
           : err instanceof Error
             ? err.message
             : "Something went wrong";
