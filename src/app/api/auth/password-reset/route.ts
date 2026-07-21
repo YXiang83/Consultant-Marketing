@@ -6,7 +6,6 @@ import { supabaseServer } from "@/lib/supabase/server";
 
 const bodySchema = z.object({
   email: z.string().trim().email().max(320),
-  origin: z.string().url().max(2048),
 });
 
 function emailHash(email: string) {
@@ -32,15 +31,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
   }
 
-  const { email, origin } = parsed.data;
-  const requestOrigin = new URL(request.url).origin;
-  const redirectOrigin = new URL(origin).origin === requestOrigin ? requestOrigin : requestOrigin;
+  const { email } = parsed.data;
+  const origin = new URL(request.url).origin;
   const supabase = await supabaseServer();
 
   try {
     const result = await withTimeout(
       supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${redirectOrigin}/reset-password`,
+        redirectTo: `${origin}/auth/callback?next=/reset-password`,
       }),
       15_000,
     );
